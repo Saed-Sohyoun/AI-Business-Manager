@@ -1,0 +1,91 @@
+{
+  "name": "AI-BOS auditing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d4414efb-1066-48d1-85de-d564a9752f9a",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AI_BOS_BASE_URL }}/api/v1/n8n/webhooks/audit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-Webhook-Secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            },
+            {
+              "name": "X-N8N-Timestamp",
+              "value": "={{ Math.floor(Date.now() / 1000) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idempotency_key: 'audit-' + $now.toFormat('yyyy-MM-dd-HH'), payload: {}, timeout_seconds: 120 }) }}",
+        "options": {
+          "timeout": 130000
+        }
+      },
+      "id": "945bf469-f850-4e64-a2e1-d2cfb8c9eeb4",
+      "name": "Call Backend Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Thin orchestrator only. Business logic, approvals, and source-of-truth remain in the backend. No approval bypass. No uncontrolled loops."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call Backend Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "ai_bos_phase": 17,
+    "orchestration_only": true,
+    "approval_bypass": false,
+    "uncontrolled_loops": false
+  },
+  "pinData": {}
+}

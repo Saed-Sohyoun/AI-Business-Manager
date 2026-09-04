@@ -1,0 +1,122 @@
+/* =============================================================================
+   Business OS — Design tokens
+   Restrained commercial SaaS language. No decorative gradients.
+   ============================================================================= */
+
+:root {
+  /* ——— Color: surfaces ——— */
+  --color-bg: #eef0f3;
+  --color-bg-elevated: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f3f4f6;
+  --color-surface-hover: #f0f2f5;
+  --color-ink: #12151a;
+  --color-ink-secondary: #3d4450;
+  --color-ink-muted: #6b7280;
+  --color-ink-faint: #9aa1ad;
+  --color-border: #d5dae2;
+  --color-border-strong: #b8c0cc;
+  --color-border-subtle: #e6e9ef;
+
+  /* ——— Color: brand / accent (steel, not purple) ——— */
+  --color-accent: #1c4b66;
+  --color-accent-hover: #163a50;
+  --color-accent-muted: #e8f0f5;
+  --color-accent-text: #1c4b66;
+
+  /* ——— Color: semantic ——— */
+  --color-success: #1f6b4a;
+  --color-success-bg: #e8f5ef;
+  --color-warning: #8a5a12;
+  --color-warning-bg: #f8efd9;
+  --color-danger: #9b2c2c;
+  --color-danger-bg: #f8e8e8;
+  --color-info: #1c4b66;
+  --color-info-bg: #e8f0f5;
+
+  /* ——— Color: status dots ——— */
+  --color-status-idle: #9aa1ad;
+  --color-status-running: #1c4b66;
+  --color-status-success: #1f6b4a;
+  --color-status-failed: #9b2c2c;
+  --color-status-blocked: #8a5a12;
+
+  /* ——— Typography ——— */
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  --leading-tight: 1.25;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-label: 0.06em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ——— Spacing (4px base) ——— */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* ——— Borders / radii (restrained) ——— */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+  --border-width: 1px;
+
+  /* ——— Shadows (subtle, purposeful) ——— */
+  --shadow-xs: 0 1px 0 rgba(18, 21, 26, 0.04);
+  --shadow-sm: 0 1px 2px rgba(18, 21, 26, 0.06), 0 1px 0 rgba(18, 21, 26, 0.03);
+  --shadow-md: 0 4px 12px rgba(18, 21, 26, 0.08), 0 1px 2px rgba(18, 21, 26, 0.04);
+  --shadow-lg: 0 12px 32px rgba(18, 21, 26, 0.12), 0 2px 6px rgba(18, 21, 26, 0.06);
+  --shadow-focus: 0 0 0 3px rgba(28, 75, 102, 0.28);
+
+  /* ——— Transitions ——— */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 280ms;
+
+  /* ——— Layout ——— */
+  --sidebar-width: 232px;
+  --sidebar-collapsed: 64px;
+  --topbar-height: 52px;
+  --content-max: 1280px;
+  --z-sidebar: 40;
+  --z-topbar: 50;
+  --z-drawer: 60;
+  --z-modal: 70;
+  --z-toast: 80;
+
+  /* ——— Breakpoints (reference; media queries use raw values) ——— */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+}

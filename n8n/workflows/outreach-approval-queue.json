@@ -1,0 +1,91 @@
+{
+  "name": "AI-BOS outreach-approval-queue",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "4cd2e9dc-1c8d-4910-9430-706efb2c059f",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AI_BOS_BASE_URL }}/api/v1/n8n/webhooks/outreach-approval-queue",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-Webhook-Secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            },
+            {
+              "name": "X-N8N-Timestamp",
+              "value": "={{ Math.floor(Date.now() / 1000) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idempotency_key: 'outreach-approval-queue-' + $now.toFormat('yyyy-MM-dd-HH'), payload: {}, timeout_seconds: 120 }) }}",
+        "options": {
+          "timeout": 130000
+        }
+      },
+      "id": "744fac69-fb4a-4ae0-82b7-1afe21e31a85",
+      "name": "Call Backend Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Thin orchestrator only. Business logic, approvals, and source-of-truth remain in the backend. No approval bypass. No uncontrolled loops."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call Backend Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "ai_bos_phase": 17,
+    "orchestration_only": true,
+    "approval_bypass": false,
+    "uncontrolled_loops": false
+  },
+  "pinData": {}
+}
