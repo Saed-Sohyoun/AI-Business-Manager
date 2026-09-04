@@ -26,7 +26,13 @@ export function Modal({ open, title, children, onClose, footer }) {
           <h2 id="modal-title" className="modal__title">
             {title}
           </h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close dialog">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            disabled={!onClose}
+            aria-label="Close dialog"
+          >
             Close
           </Button>
         </div>

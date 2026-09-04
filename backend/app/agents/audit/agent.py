@@ -70,12 +70,27 @@ class AuditAgent:
     ) -> None:
         self._session = session
         self._browser = browser_service
+        if self._browser is not None and getattr(self._browser, "_session", None) is None:
+            self._browser._session = session
         self._search = search_service
         self._ai = ai_service
         self._settings = settings
 
     def run(self, request: AuditRequest) -> AuditRunResult:
         logs: list[str] = []
+        from app.exceptions import ForbiddenError
+        from app.owner.controls import SystemControlService
+
+        try:
+            SystemControlService(self._session).assert_ai_operations(actor=AGENT_NAME)
+        except ForbiddenError as exc:
+            logs.append("system_control:ai_operations_disabled")
+            return AuditRunResult(
+                agent_run_id=UUID(int=0),
+                status="failed",
+                error_message=exc.message,
+                logs=logs,
+            )
         max_audits = min(
             request.max_audits or self._settings.max_audits_per_run,
             self._settings.max_audits_per_run,

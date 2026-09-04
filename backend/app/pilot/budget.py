@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.exceptions import LimitReachedError
+from app.pilot.budget_warnings import emit_budget_threshold_alerts, utc_day_key
 from app.pilot.config import PilotModeConfig, pilot_mode_from_settings
 from app.pilot.schemas import BudgetStatus, LimitCheckResult
 from app.security import assert_daily_budget, assert_max_single_expense, daily_cost_total
@@ -40,12 +41,14 @@ class BudgetGuard:
         remaining = max(Decimal("0"), limit - spent)
         ratio = (spent / limit) if limit > 0 else Decimal("1")
         warning = bool(limit > 0 and ratio >= self._pilot.budget_warning_ratio)
+        urgent = bool(limit > 0 and ratio >= self._pilot.budget_urgent_ratio)
         return BudgetStatus(
             spent_today=spent,
             daily_limit=limit,
             remaining=remaining,
             currency=self._pilot.currency,
             warning=warning,
+            urgent=urgent,
             exhausted=spent >= limit,
             ratio=ratio.quantize(Decimal("0.0001")),
         )
@@ -77,6 +80,29 @@ class BudgetGuard:
             details={"additional": str(additional), "projected": str(projected)},
         )
 
+    def _maybe_emit_warnings(self, status: BudgetStatus) -> None:
+        if not status.warning and not status.urgent:
+            return
+        emit_budget_threshold_alerts(
+            self._session,
+            spent=status.spent_today,
+            limit=status.daily_limit,
+            currency=status.currency,
+            ratio=status.ratio,
+            pilot=self._pilot,
+            commit=False,
+        )
+        if status.warning and self._notifications is not None:
+            level = "urgent" if status.urgent else "warning"
+            self._notifications.notify_budget_warning(
+                message=(
+                    f"Pilot budget {level}: {status.spent_today} / "
+                    f"{status.daily_limit} {status.currency} "
+                    f"({(status.ratio * 100).quantize(Decimal('0.1'))}%)"
+                ),
+                reference=f"pilot-budget-{level}-{utc_day_key()}",
+            )
+
     def assert_expense_allowed(self, amount: Decimal) -> BudgetStatus:
         """Fail closed on expense/budget; notify when approaching the daily ceiling."""
         # Keep security helpers as the authoritative money gate (settings-backed).
@@ -92,15 +118,7 @@ class BudgetGuard:
             raise
 
         status = self.status()
-        if status.warning and self._notifications is not None:
-            self._notifications.notify_budget_warning(
-                message=(
-                    f"Pilot budget nearly exhausted: {status.spent_today} / "
-                    f"{status.daily_limit} {status.currency} "
-                    f"({(status.ratio * 100).quantize(Decimal('0.1'))}%)"
-                ),
-                reference=f"pilot-budget-{utc_day_key()}",
-            )
+        self._maybe_emit_warnings(status)
         return status
 
     def assert_can_spend(self, amount: Decimal) -> LimitCheckResult:
@@ -124,10 +142,19 @@ class BudgetGuard:
                 "Daily pilot spending limit reached",
                 details=daily.model_dump(mode="json"),
             )
+        # Projected spend may cross warning thresholds even when allowed
+        projected = Decimal(str(daily.used)) + amount
+        limit = self._pilot.max_daily_spending
+        if limit > 0:
+            projected_ratio = (projected / limit).quantize(Decimal("0.0001"))
+            if projected_ratio >= self._pilot.budget_warning_ratio:
+                emit_budget_threshold_alerts(
+                    self._session,
+                    spent=projected,
+                    limit=limit,
+                    currency=self._pilot.currency,
+                    ratio=projected_ratio,
+                    pilot=self._pilot,
+                    commit=False,
+                )
         return daily
-
-
-def utc_day_key() -> str:
-    from app.models.base import utc_now
-
-    return utc_now().strftime("%Y-%m-%d")

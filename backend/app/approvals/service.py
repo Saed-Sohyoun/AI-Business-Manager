@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -12,6 +10,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.approvals.fingerprint import (
+    compute_fingerprint,
+)
 from app.approvals.policy import ApprovalPolicy, normalize_action_type
 from app.approvals.schemas import (
     ApprovalEventView,
@@ -20,13 +21,23 @@ from app.approvals.schemas import (
     GateDecision,
 )
 from app.config import Settings
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationAppError
+from app.exceptions import (
+    ApprovalPayloadMismatchError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationAppError,
+)
 from app.models import Approval, ApprovalEvent
 from app.models.approval import TERMINAL_APPROVAL_STATUSES
 from app.models.base import utc_now
 from app.models.enums import ApprovalStatus, RiskLevel
+from app.security.events import APPROVAL_PAYLOAD_MISMATCH, record_security_event
 
 logger = logging.getLogger(__name__)
+
+# Re-export for callers that imported compute_fingerprint from service
+__all__ = ["ApprovalService", "compute_fingerprint"]
 
 
 def _as_status(value: ApprovalStatus | str) -> ApprovalStatus:
@@ -35,18 +46,6 @@ def _as_status(value: ApprovalStatus | str) -> ApprovalStatus:
 
 def _as_risk(value: RiskLevel | str) -> RiskLevel:
     return value if isinstance(value, RiskLevel) else RiskLevel(value)
-
-
-def compute_fingerprint(
-    *,
-    action_type: str,
-    action_payload: dict[str, Any],
-    manager_task_id: UUID | None = None,
-) -> str:
-    payload = json.dumps(action_payload, sort_keys=True, default=str)
-    task = str(manager_task_id) if manager_task_id else ""
-    raw = f"{normalize_action_type(action_type)}|{task}|{payload}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
 
 
 def _ensure_aware(value: datetime) -> datetime:
@@ -80,8 +79,13 @@ class ApprovalService:
         action_type: str,
         *,
         approval_id: UUID | None = None,
+        action_payload: dict[str, Any] | None = None,
     ) -> GateDecision:
-        """Decide whether an action may proceed. Always consults live DB state."""
+        """Decide whether an action may proceed. Always consults live DB state.
+
+        When ``action_payload`` is provided (required for outbound send actions),
+        the live fingerprint must match the stored approval fingerprint.
+        """
         action = normalize_action_type(action_type)
         entry = self._policy.get_entry(action)
         risk = entry.risk_level
@@ -96,7 +100,6 @@ class ApprovalService:
             )
 
         if risk == RiskLevel.RED:
-            # Human-only: agents never execute, even with an approved record.
             return GateDecision(
                 decision="human_only",
                 action_type=action,
@@ -130,6 +133,24 @@ class ApprovalService:
                     approval_id=approval_id,
                     may_execute=False,
                 )
+            # Execution-time fingerprint rebinding when live payload is supplied.
+            # Send paths MUST pass action_payload; Manager resume may check type-only.
+            if action_payload is not None:
+                live_fp = compute_fingerprint(
+                    action_type=action,
+                    action_payload=action_payload,
+                    manager_task_id=approval.manager_task_id,
+                )
+                if live_fp != approval.fingerprint:
+                    self._mark_stale_payload_mismatch(approval, live_fp=live_fp)
+                    return GateDecision(
+                        decision="deny",
+                        action_type=action,
+                        risk_level=risk,
+                        reason="APPROVAL_PAYLOAD_MISMATCH",
+                        approval_id=approval_id,
+                        may_execute=False,
+                    )
             return GateDecision(
                 decision="allow_auto",
                 action_type=action,
@@ -158,10 +179,28 @@ class ApprovalService:
             may_execute=False,
         )
 
-    def assert_executable(self, action_type: str, *, approval_id: UUID | None = None) -> GateDecision:
-        """Hard gate — raises ForbiddenError if execution would bypass approvals."""
-        decision = self.evaluate_gate(action_type, approval_id=approval_id)
+    def assert_executable(
+        self,
+        action_type: str,
+        *,
+        approval_id: UUID | None = None,
+        action_payload: dict[str, Any] | None = None,
+    ) -> GateDecision:
+        """Hard gate — raises if execution would bypass approvals or mismatch payload."""
+        decision = self.evaluate_gate(
+            action_type,
+            approval_id=approval_id,
+            action_payload=action_payload,
+        )
         if not decision.may_execute:
+            if decision.reason == "APPROVAL_PAYLOAD_MISMATCH":
+                raise ApprovalPayloadMismatchError(
+                    details={
+                        "action_type": decision.action_type,
+                        "approval_id": str(approval_id) if approval_id else None,
+                        "decision": decision.decision,
+                    },
+                )
             raise ForbiddenError(
                 "Action blocked by approval gate",
                 details={
@@ -172,6 +211,43 @@ class ApprovalService:
                 },
             )
         return decision
+
+    def _mark_stale_payload_mismatch(self, approval: Approval, *, live_fp: str) -> None:
+        """Invalidate approval so mutated payloads cannot be retried with old grant."""
+        if _as_status(approval.status) != ApprovalStatus.APPROVED:
+            return
+        approval.status = ApprovalStatus.CANCELLED
+        approval.resolved_at = self._clock()
+        approval.resolved_by = "system:fingerprint_rebind"
+        approval.resolution_note = "APPROVAL_PAYLOAD_MISMATCH — action changed after approval"
+        approval.extra_metadata = {
+            **(approval.extra_metadata or {}),
+            "stale_reason": APPROVAL_PAYLOAD_MISMATCH,
+            "stored_fingerprint": approval.fingerprint,
+            "live_fingerprint": live_fp,
+        }
+        self._session.add(
+            ApprovalEvent(
+                approval_id=approval.id,
+                event_type="cancelled",
+                actor="system:fingerprint_rebind",
+                detail="APPROVAL_PAYLOAD_MISMATCH",
+                extra_metadata={"live_fingerprint": live_fp},
+            )
+        )
+        record_security_event(
+            self._session,
+            event_type=APPROVAL_PAYLOAD_MISMATCH,
+            action=approval.action_type,
+            reason="fingerprint_mismatch_at_execution",
+            details={"approval_id": str(approval.id)},
+        )
+        self._session.flush()
+        logger.warning(
+            "APPROVAL_PAYLOAD_MISMATCH approval_id=%s action=%s",
+            approval.id,
+            approval.action_type,
+        )
 
     def request_approval(self, request: ApprovalRequest) -> ApprovalView:
         action = normalize_action_type(request.action_type)

@@ -3,6 +3,8 @@
 Uses SearchProvider + BrowserService + Database.
 Never invents companies, websites, emails, phones, addresses, or facts.
 Never contacts companies or sends email.
+
+Boundaries are enforced by the Research AgentContract — not by the model.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.agents.contracts import get_enforcer
+from app.agents.contracts.research import RESEARCH_AGENT_ID
 from app.agents.research.extraction import (
     apply_browser_verification,
     candidate_from_search_result,
@@ -29,6 +33,7 @@ from app.agents.research.schemas import (
     StoredCompanySummary,
 )
 from app.config import Settings
+from app.exceptions import AgentScopeViolationError
 from app.models import AgentRun, Company, CompanyEvidence, CompanySource
 from app.models.base import utc_now
 from app.models.enums import AgentRunStatus, CompanyStatus
@@ -39,6 +44,7 @@ from app.providers.search.exceptions import (
 )
 from app.services.browser_service import BrowserService
 from app.services.search_service import SearchService
+from app.tools import ToolGateway
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +67,77 @@ class ResearchAgent:
         self._session = session
         self._search = search_service
         self._browser = browser_service
+        if self._browser is not None and getattr(self._browser, "_session", None) is None:
+            self._browser._session = session
         self._settings = settings
         self._sleep = sleep_fn or time.sleep
+        self._enforcer = get_enforcer(RESEARCH_AGENT_ID)
+        self._contract = self._enforcer.contract
+
+    def request_action(self, action: str, *, task: str | None = None) -> None:
+        """Validate an action against the Research contract (fail closed)."""
+        self._enforcer.assert_action_allowed(action, task=task or TASK_TYPE)
+
+    def escalate_if_external_communication(self, reason: str) -> ResearchRunResult:
+        """STOP → request Manager when external communication is required."""
+        esc = self._enforcer.escalate_external_communication(
+            reason=reason,
+            task=TASK_TYPE,
+        )
+        return ResearchRunResult(
+            agent_run_id=UUID(int=0),
+            status="escalated",
+            query="",
+            error_message=esc.user_message,
+            logs=["escalation:external_communication", f"reason:{reason}"],
+            escalation={
+                "escalate": esc.escalate,
+                "target": esc.target,
+                "trigger": esc.trigger,
+                "reason": esc.reason,
+            },
+        )
 
     def run(self, request: ResearchRequest) -> ResearchRunResult:
         logs: list[str] = []
+        from app.exceptions import ForbiddenError
+        from app.owner.controls import SystemControlService
+
+        try:
+            SystemControlService(self._session).assert_ai_operations(actor=AGENT_NAME)
+        except ForbiddenError as exc:
+            logs.append("system_control:ai_operations_disabled")
+            return ResearchRunResult(
+                agent_run_id=UUID(int=0),
+                status="failed",
+                query=request.query,
+                error_message=exc.message,
+                logs=logs,
+            )
+
+        # Contract gate — independent of the LLM
+        try:
+            self._enforcer.assert_action_allowed(
+                "research.discover_companies",
+                task=TASK_TYPE,
+            )
+        except AgentScopeViolationError as exc:
+            logs.append("agent_scope_violation")
+            return ResearchRunResult(
+                agent_run_id=UUID(int=0),
+                status="failed",
+                query=request.query,
+                error_message=exc.message,
+                logs=logs,
+            )
+
+        contract_cap = self._contract.limits.max_companies_per_run
         max_companies = min(
             request.max_companies or self._settings.max_companies_per_run,
             self._settings.max_companies_per_run,
         )
+        if contract_cap is not None:
+            max_companies = min(max_companies, contract_cap)
         from app.pilot.limits import LimitService
 
         daily_remaining = LimitService(self._session, self._settings).remaining_companies_capacity()
@@ -106,6 +174,7 @@ class ResearchAgent:
                 "industry": request.industry,
                 "location": request.location,
                 "verify_with_browser": verify,
+                "agent_contract_id": self._contract.agent_id,
                 **(request.metadata or {}),
             },
         )
@@ -130,8 +199,16 @@ class ResearchAgent:
         skipped = 0
         candidates_seen = 0
         seen_domains: set[str] = set()
+        tools = ToolGateway(
+            RESEARCH_AGENT_ID,
+            task=TASK_TYPE,
+            execution_id=agent_run.id,
+            enforcer=self._enforcer,
+        )
 
         try:
+            tools.require("search")
+            tools.require("database")
             search_hits, search_cost, search_logs = self._search_with_retry(request)
             logs.extend(search_logs)
             estimated_cost += search_cost
@@ -157,6 +234,7 @@ class ResearchAgent:
                     continue
 
                 if verify and self._browser is not None and self._browser.is_available():
+                    tools.require("browser")
                     candidate, browser_cost, blog = self._verify_candidate(candidate)
                     estimated_cost += browser_cost
                     logs.extend(blog)
@@ -208,6 +286,14 @@ class ResearchAgent:
                 stored=stored,
                 estimated_cost=estimated_cost,
                 logs=logs,
+            )
+        except AgentScopeViolationError as exc:
+            return self._fail_run(
+                agent_run,
+                request,
+                [*logs, "agent_scope_violation"],
+                estimated_cost,
+                exc.message,
             )
         except SearchError as exc:
             return self._fail_run(agent_run, request, logs, estimated_cost, f"search_failure: {exc.code}")

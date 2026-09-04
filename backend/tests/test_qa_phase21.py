@@ -31,6 +31,7 @@ def _settings(**overrides) -> Settings:
         cors_origins="",
         n8n_webhook_secret=SecretStr("qa-n8n-secret"),
         n8n_webhook_require_timestamp=False,
+        n8n_webhook_require_signature=False,
         n8n_default_timeout_seconds=30.0,
         n8n_max_execution_retries=2,
         n8n_rate_limit_per_minute=10_000,

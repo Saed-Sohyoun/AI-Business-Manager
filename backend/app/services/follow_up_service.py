@@ -400,9 +400,36 @@ class FollowUpService:
                 details={"item_id": str(item_id)},
             )
 
+        if item.outreach_id is None:
+            raise ValidationAppError(
+                "Follow-up has no outreach draft",
+                details={"item_id": str(item_id)},
+            )
+        outreach = self._session.get(Outreach, item.outreach_id)
+        if outreach is None:
+            raise ValidationAppError(
+                "Follow-up outreach draft missing",
+                details={"outreach_id": str(item.outreach_id)},
+            )
+
+        from app.approvals.fingerprint import build_outbound_email_payload
+        from app.services.outreach_body import compose_outreach_body
+
+        body = compose_outreach_body(outreach)
+        live_payload = build_outbound_email_payload(
+            action_type=ACTION_SEND_FOLLOWUP,
+            recipient_email=outreach.recipient_email or "",
+            subject=outreach.subject,
+            body_text=body,
+            outreach_id=outreach.id,
+            lead_id=sequence.lead_id,
+            company_id=sequence.company_id,
+            sender_from=(self._settings.email_from or "").strip(),
+        )
         gate = self._approvals.evaluate_gate(
             ACTION_SEND_FOLLOWUP,
             approval_id=item.approval_id,
+            action_payload=live_payload,
         )
         if not gate.may_execute:
             raise ForbiddenError(
@@ -420,18 +447,6 @@ class FollowUpService:
                 details={"status": approval.status.value},
             )
 
-        if item.outreach_id is None:
-            raise ValidationAppError(
-                "Follow-up has no outreach draft",
-                details={"item_id": str(item_id)},
-            )
-        outreach = self._session.get(Outreach, item.outreach_id)
-        if outreach is None:
-            raise ValidationAppError(
-                "Follow-up outreach draft missing",
-                details={"outreach_id": str(item.outreach_id)},
-            )
-
         # Cap: never exceed max follow-ups
         if sequence.follow_up_count >= self._settings.max_followups:
             self._stop_sequence(sequence, FollowUpStopReason.MAX_FOLLOWUPS)
@@ -445,10 +460,6 @@ class FollowUpService:
             )
 
         service = self._get_email_service()
-
-        body = outreach.message
-        if outreach.cta and outreach.cta not in body:
-            body = f"{body}\n\n{outreach.cta}"
 
         item.status = FollowUpItemStatus.SENDING
         self._session.flush()
@@ -719,6 +730,20 @@ class FollowUpService:
                 "Follow-up send path misconfigured — expected YELLOW require_approval",
                 details={"decision": gate.decision},
             )
+        from app.approvals.fingerprint import build_outbound_email_payload
+        from app.services.outreach_body import compose_outreach_body
+
+        body = compose_outreach_body(outreach)
+        payload = build_outbound_email_payload(
+            action_type=ACTION_SEND_FOLLOWUP,
+            recipient_email=outreach.recipient_email or "",
+            subject=outreach.subject,
+            body_text=body,
+            outreach_id=outreach.id,
+            lead_id=outreach.lead_id,
+            company_id=outreach.company_id,
+            sender_from=(self._settings.email_from or "").strip(),
+        )
         view = self._approvals.request_approval(
             ApprovalRequest(
                 action_type=ACTION_SEND_FOLLOWUP,
@@ -726,13 +751,7 @@ class FollowUpService:
                     f"Approve follow-up #{item.followup_index} for outreach {outreach.id}"
                 ),
                 requested_by="follow_up",
-                action_payload={
-                    "followup_item_id": str(item.id),
-                    "outreach_id": str(outreach.id),
-                    "followup_index": item.followup_index,
-                    "subject": outreach.subject,
-                    "recipient_email": outreach.recipient_email,
-                },
+                action_payload=payload,
                 metadata={
                     "followup_item_id": str(item.id),
                     "sequence_id": str(item.sequence_id),

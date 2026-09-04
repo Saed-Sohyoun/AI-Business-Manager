@@ -33,6 +33,7 @@ def _n8n_settings(**overrides) -> Settings:
         n8n_default_timeout_seconds=30.0,
         n8n_max_execution_retries=2,
         n8n_webhook_require_timestamp=False,
+        n8n_webhook_require_signature=False,
         n8n_rate_limit_per_minute=10_000,
         api_rate_limit_per_minute=10_000,
         health_rate_limit_per_minute=10_000,

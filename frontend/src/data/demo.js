@@ -1,7 +1,7 @@
 /**
- * DEMO DATA — for dashboard UI development only.
- * Not production figures. Not live backend responses.
- * Replace with authenticated API reads when wiring Phase APIs.
+ * DEMO DATA — fixtures for DEMO mode only.
+ * Live / Pilot mode MUST call the owner API and MUST NOT fall back to these
+ * figures when a request fails.
  */
 export const DATA_SOURCE = 'demo'
 

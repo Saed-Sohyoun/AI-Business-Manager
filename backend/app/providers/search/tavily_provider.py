@@ -74,6 +74,26 @@ class TavilySearchProvider(SearchProvider):
         return self._settings.tavily_configured
 
     def search(self, request: SearchRequest) -> SearchResponse:
+        from app.exceptions import ServiceUnavailableError
+        from app.providers.circuit_breaker import get_circuit
+
+        circuit = get_circuit("search", failure_threshold=5, reset_timeout_seconds=30.0)
+        if not circuit.allow_request():
+            raise ServiceUnavailableError(
+                "Research is temporarily unavailable",
+                details={"code": "CIRCUIT_OPEN", "provider": "search"},
+            )
+        try:
+            result = self._search_inner(request)
+        except SearchConfigurationError:
+            raise
+        except Exception:
+            circuit.record_failure()
+            raise
+        circuit.record_success()
+        return result
+
+    def _search_inner(self, request: SearchRequest) -> SearchResponse:
         if not self.is_configured():
             raise SearchConfigurationError(
                 "TAVILY_API_KEY is not configured. Set it in the environment to use search.",

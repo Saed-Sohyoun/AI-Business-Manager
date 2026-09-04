@@ -26,7 +26,14 @@ def pilot_status(
     request: Request,
     session: Annotated[Session, Depends(get_db)],
 ) -> DataResponse[PilotStatus]:
-    """Current Pilot Mode envelope, usage, and budget (source of truth: backend)."""
+    """Current Pilot Mode envelope — owner API key required (not public)."""
+    from app.security import require_owner_identity
+
     cfg = _settings(request)
+    require_owner_identity(
+        provided_api_key=request.headers.get("X-Owner-API-Key"),
+        settings=cfg,
+        claimed_resolver=request.headers.get("X-Owner-Resolver") or "owner",
+    )
     status = ExecutionGuard(session, cfg).status()
     return DataResponse(data=status, request_id=get_request_id(request))

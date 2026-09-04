@@ -37,6 +37,14 @@
               "value": "={{ Math.floor(Date.now() / 1000) }}"
             },
             {
+              "name": "X-N8N-Nonce",
+              "value": "={{ $execution.id + '-' + String(Math.floor(Date.now())) }}"
+            },
+            {
+              "name": "X-N8N-Signature",
+              "value": "={{ $env.N8N_WEBHOOK_HMAC_SIGNATURE }}"
+            },
+            {
               "name": "Content-Type",
               "value": "application/json"
             }
@@ -60,7 +68,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "notes": "Thin orchestrator only. Business logic, approvals, and source-of-truth remain in the backend. No approval bypass. No uncontrolled loops."
+      "notes": "Thin orchestrator only. Auth uses HMAC + nonce; business logic, approvals, and source-of-truth remain in the backend. No approval bypass. No uncontrolled loops."
     }
   ],
   "connections": {

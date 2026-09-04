@@ -139,12 +139,26 @@ def fu_env(db_session):
 
 
 def _approve_initial(env) -> None:
+    from app.approvals.fingerprint import build_outbound_email_payload
+    from app.services.outreach_body import compose_outreach_body
+
+    outreach = env["outreach"]
+    payload = build_outbound_email_payload(
+        action_type="sales.send_outreach",
+        recipient_email=outreach.recipient_email or "",
+        subject=outreach.subject,
+        body_text=compose_outreach_body(outreach),
+        outreach_id=outreach.id,
+        lead_id=outreach.lead_id,
+        company_id=outreach.company_id,
+        sender_from=env["settings"].email_from or "",
+    )
     view = env["approvals"].request_approval(
         ApprovalRequest(
             action_type="sales.send_outreach",
             description="Send initial",
             requested_by="manager",
-            action_payload={"outreach_id": str(env["outreach"].id)},
+            action_payload=payload,
         )
     )
     env["session"].commit()

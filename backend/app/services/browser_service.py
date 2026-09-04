@@ -10,6 +10,8 @@ user/data context only.
 
 from __future__ import annotations
 
+from sqlalchemy.orm import Session
+
 from app.config import Settings, get_settings
 from app.providers.browser.base import BrowserProvider
 from app.providers.browser.playwright_provider import PlaywrightBrowserProvider
@@ -24,8 +26,9 @@ _UNTRUSTED_PREAMBLE = (
 
 
 class BrowserService:
-    def __init__(self, provider: BrowserProvider) -> None:
+    def __init__(self, provider: BrowserProvider, *, session: Session | None = None) -> None:
         self._provider = provider
+        self._session = session
 
     @property
     def provider(self) -> BrowserProvider:
@@ -43,6 +46,10 @@ class BrowserService:
         include_text: bool = True,
         metadata: dict | None = None,
     ) -> BrowserPageSnapshot:
+        if self._session is not None:
+            from app.owner.controls import SystemControlService
+
+            SystemControlService(self._session).assert_browser(actor="browser_service")
         request = BrowserFetchRequest(
             url=url,
             include_links=include_links,
@@ -135,7 +142,8 @@ def build_browser_service(
     settings: Settings | None = None,
     *,
     provider: BrowserProvider | None = None,
+    session: Session | None = None,
 ) -> BrowserService:
     """Factory — does not require Playwright browsers at build time."""
     cfg = settings or get_settings()
-    return BrowserService(provider or build_playwright_provider(cfg))
+    return BrowserService(provider or build_playwright_provider(cfg), session=session)

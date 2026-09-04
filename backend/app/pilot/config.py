@@ -24,7 +24,8 @@ class PilotModeConfig(BaseModel):
     max_followups_per_lead: int = 2
     max_daily_spending: Decimal = Field(default=Decimal("3.00"))
     max_single_expense: Decimal = Field(default=Decimal("20.00"))
-    budget_warning_ratio: Decimal = Field(default=Decimal("0.80"))
+    budget_warning_ratio: Decimal = Field(default=Decimal("0.70"))
+    budget_urgent_ratio: Decimal = Field(default=Decimal("0.90"))
 
     # Actions that always require human approval in pilot (and policy)
     approval_required_actions: tuple[str, ...] = (
@@ -50,4 +51,5 @@ def pilot_mode_from_settings(settings: Settings) -> PilotModeConfig:
         max_daily_spending=settings.daily_budget_limit,
         max_single_expense=settings.max_single_expense,
         budget_warning_ratio=settings.budget_warning_ratio,
+        budget_urgent_ratio=settings.budget_urgent_ratio,
     )

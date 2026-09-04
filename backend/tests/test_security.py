@@ -152,6 +152,7 @@ def test_webhook_timestamp_required_and_skew():
 
 
 def test_n8n_auth_rejects_stale_timestamp():
+    import asyncio
     from unittest.mock import MagicMock
 
     from app.orchestration.auth import verify_n8n_webhook
@@ -159,6 +160,7 @@ def test_n8n_auth_rejects_stale_timestamp():
     cfg = _settings(
         n8n_webhook_secret=SecretStr("super-secret-value"),
         n8n_webhook_require_timestamp=True,
+        n8n_webhook_require_signature=False,
         n8n_webhook_max_skew_seconds=60,
     )
     stale = str(int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()))
@@ -168,8 +170,12 @@ def test_n8n_auth_rejects_stale_timestamp():
         "X-N8N-Timestamp": stale,
     }
     request.app.state.settings = cfg
+
+    async def _run():
+        await verify_n8n_webhook(request, settings=cfg)
+
     with pytest.raises(UnauthorizedError):
-        verify_n8n_webhook(request, settings=cfg)
+        asyncio.run(_run())
 
 
 # --- Owner auth stub --------------------------------------------------------------

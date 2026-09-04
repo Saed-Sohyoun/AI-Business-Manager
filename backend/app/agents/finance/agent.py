@@ -179,6 +179,10 @@ class FinanceAgent:
     def record_cost(self, request: CostRecordRequest, *, commit: bool = True) -> CostEntry:
         self._approvals.assert_executable(ACTION_RECORD_COST)
 
+        from app.owner.controls import SystemControlService
+
+        SystemControlService(self._session).assert_spending(actor=AGENT_NAME)
+
         amount = quantize_money(request.amount)
         from app.pilot.budget import BudgetGuard
 

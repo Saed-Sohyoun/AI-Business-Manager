@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import api_router, pilot_router
+from app.api import api_router, owner_router, pilot_router
 from app.api.exception_handlers import register_exception_handlers
 from app.api.n8n import router as n8n_router
 from app.config import Settings, get_settings
@@ -28,6 +28,8 @@ _CORS_ALLOW_HEADERS = [
     "X-N8N-Webhook-Secret",
     "X-N8N-Timestamp",
     "X-Owner-API-Key",
+    "X-Owner-Resolver",
+    "X-CSRF-Token",
 ]
 
 
@@ -77,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_exception_handlers(application)
     # Health and future versioned routes; /health stays at root for probes.
     application.include_router(api_router)
+    application.include_router(owner_router, prefix=cfg.api_prefix)
     application.include_router(pilot_router, prefix=cfg.api_prefix)
     application.include_router(n8n_router, prefix=cfg.api_prefix)
 

@@ -1,53 +1,50 @@
 export const NAV_SECTIONS = [
   {
-    label: 'Operate',
+    label: "Overview",
     items: [
-      { to: '/', label: 'Overview', end: true },
-      { to: '/goals', label: 'Goals' },
-      { to: '/agents', label: 'Agents' },
-      { to: '/approvals', label: 'Approvals' },
+      { to: "/", label: "Overview", end: true },
+      { to: "/opportunities", label: "Opportunities" },
+      { to: "/customers", label: "Customers" },
+      { to: "/work", label: "Work" },
+      { to: "/money", label: "Money" },
+      { to: "/approvals", label: "Approvals" },
+      { to: "/reports", label: "Reports" },
     ],
   },
   {
-    label: 'Pipeline',
-    items: [
-      { to: '/companies', label: 'Companies' },
-      { to: '/leads', label: 'Leads' },
-      { to: '/audits', label: 'Audits' },
-      { to: '/outreach', label: 'Outreach' },
-    ],
+    label: "System",
+    items: [{ to: "/settings", label: "Settings" }],
   },
-  {
-    label: 'Delivery',
-    items: [
-      { to: '/customers', label: 'Customers' },
-      { to: '/projects', label: 'Projects' },
-      { to: '/finance', label: 'Finance' },
-      { to: '/reports', label: 'Reports' },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { to: '/system', label: 'System Health' },
-      { to: '/settings', label: 'Settings' },
-    ],
-  },
-]
+];
 
 export const PAGE_TITLES = {
-  '/': 'Overview',
-  '/goals': 'Goals',
-  '/agents': 'Agents',
-  '/companies': 'Companies',
-  '/leads': 'Leads',
-  '/audits': 'Audits',
-  '/outreach': 'Outreach',
-  '/customers': 'Customers',
-  '/projects': 'Projects',
-  '/finance': 'Finance',
-  '/approvals': 'Approvals',
-  '/reports': 'Reports',
-  '/system': 'System Health',
-  '/settings': 'Settings',
+  "/": "Overview",
+  "/opportunities": "Opportunities",
+  "/opportunities/:id": "Opportunity",
+  "/customers": "Customers",
+  "/work": "Work",
+  "/money": "Money",
+  "/approvals": "Approvals",
+  "/reports": "Reports",
+  "/settings": "Settings",
+  "/settings/ai-team": "AI Team",
+  "/settings/advanced": "Advanced",
+  "/settings/system": "System controls",
+  // Legacy redirects still titled for deep links
+  "/agents": "AI Team",
+  "/companies": "Opportunities",
+  "/leads": "Opportunities",
+  "/audits": "Opportunities",
+  "/outreach": "Opportunities",
+  "/projects": "Work",
+  "/finance": "Money",
+  "/goals": "Overview",
+  "/system": "System controls",
+};
+
+export function pageTitleForPath(pathname) {
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+  if (pathname.startsWith("/opportunities/")) return "Opportunity";
+  if (pathname.startsWith("/settings")) return "Settings";
+  return "Business OS";
 }

@@ -80,6 +80,22 @@ class ManagerAgent:
         logs: list[str] = []
         started = self._clock()
 
+        from app.owner.controls import SystemControlService
+
+        try:
+            SystemControlService(self._session).assert_ai_operations(actor=AGENT_NAME)
+        except ForbiddenError as exc:
+            logs.append("system_control:ai_operations_disabled")
+            return ManagerRunResult(
+                manager_run_id=UUID(int=0),
+                agent_run_id=UUID(int=0),
+                status="failed",
+                goal=request.goal,
+                phase="stopped",
+                error_message=exc.message,
+                logs=logs,
+            )
+
         if request.idempotency_key:
             existing = self._find_by_idempotency_key(request.idempotency_key)
             if existing is not None:

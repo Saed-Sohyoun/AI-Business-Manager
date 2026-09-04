@@ -294,16 +294,28 @@ class SalesAgent:
                 details={"decision": gate.decision},
             )
 
+        from app.approvals.fingerprint import build_outbound_email_payload
+        from app.approvals.schemas import ApprovalRequest
+        from app.services.outreach_body import compose_outreach_body
+
+        body = compose_outreach_body(outreach)
+        payload = build_outbound_email_payload(
+            action_type="sales.send_outreach",
+            recipient_email=outreach.recipient_email or "",
+            subject=outreach.subject,
+            body_text=body,
+            outreach_id=outreach.id,
+            lead_id=outreach.lead_id,
+            company_id=outreach.company_id,
+            sender_from=(self._settings.email_from or "").strip(),
+        )
+
         view = self._approvals.request_approval(
             ApprovalRequest(
                 action_type="sales.send_outreach",
                 description=f"Approve sending outreach draft {outreach_id}",
                 requested_by=requested_by,
-                action_payload={
-                    "outreach_id": str(outreach.id),
-                    "subject": outreach.subject,
-                    "recipient_email": outreach.recipient_email,
-                },
+                action_payload=payload,
                 metadata={"outreach_id": str(outreach.id)},
             )
         )

@@ -353,6 +353,7 @@ def test_execution_guard_stops_on_company_limit(pilot_env):
 
 def test_pilot_status_endpoint():
     from fastapi.testclient import TestClient
+    from pydantic import SecretStr
 
     from app.database import get_engine, init_db, reset_db_state
     from app.main import create_app
@@ -362,11 +363,24 @@ def test_pilot_status_endpoint():
     http_rate_limiter.reset()
     clear_settings_cache()
     reset_db_state()
-    cfg = _settings()
+    cfg = _settings(
+        owner_api_key=SecretStr("wave1-owner-key"),
+        approval_authorized_resolvers="owner,admin",
+    )
     application = create_app(cfg)
     with TestClient(application) as client:
         Base.metadata.create_all(bind=get_engine())
-        resp = client.get("/api/v1/pilot/status")
+        denied = client.get("/api/v1/pilot/status")
+        assert denied.status_code == 401
+        bad = client.get(
+            "/api/v1/pilot/status",
+            headers={"X-Owner-API-Key": "wrong", "X-Owner-Resolver": "owner"},
+        )
+        assert bad.status_code == 401
+        resp = client.get(
+            "/api/v1/pilot/status",
+            headers={"X-Owner-API-Key": "wave1-owner-key", "X-Owner-Resolver": "owner"},
+        )
     assert resp.status_code == 200
     body = resp.json()["data"]
     assert body["pilot_mode"] is True

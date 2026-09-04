@@ -58,6 +58,48 @@ class ForbiddenError(AppError):
         super().__init__(message, code="forbidden", status_code=403, details=details)
 
 
+class ApprovalPayloadMismatchError(ForbiddenError):
+    """Approved action no longer matches live payload — require a new approval."""
+
+    def __init__(
+        self,
+        message: str = (
+            "This approval is no longer valid because the action changed. "
+            "A new approval is required."
+        ),
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        AppError.__init__(
+            self,
+            message,
+            code="approval_payload_mismatch",
+            status_code=403,
+            details=details,
+        )
+
+
+class AgentScopeViolationError(ForbiddenError):
+    """Agent requested an action or tool outside its machine-readable contract."""
+
+    def __init__(
+        self,
+        message: str = (
+            "This work was stopped because the team attempted an action "
+            "outside its responsibilities."
+        ),
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        AppError.__init__(
+            self,
+            message,
+            code="agent_scope_violation",
+            status_code=403,
+            details=details,
+        )
+
+
 class ServiceUnavailableError(AppError):
     def __init__(
         self,

@@ -38,6 +38,7 @@ def settings():
         log_level="WARNING",
         database_url="sqlite+pysqlite:///:memory:",
         cors_origins="",
+        n8n_webhook_require_signature=False,
         n8n_rate_limit_per_minute=10_000,
         api_rate_limit_per_minute=10_000,
         health_rate_limit_per_minute=10_000,

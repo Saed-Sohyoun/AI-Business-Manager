@@ -67,6 +67,26 @@ class OpenAIProvider(AIProvider):
         return self._settings.openai_configured
 
     def complete(self, request: AICompletionRequest) -> AIResponse:
+        from app.exceptions import ServiceUnavailableError
+        from app.providers.circuit_breaker import get_circuit
+
+        circuit = get_circuit("ai", failure_threshold=5, reset_timeout_seconds=30.0)
+        if not circuit.allow_request():
+            raise ServiceUnavailableError(
+                "AI service is temporarily unavailable",
+                details={"code": "CIRCUIT_OPEN", "provider": "ai"},
+            )
+        try:
+            result = self._complete_inner(request)
+        except AIConfigurationError:
+            raise
+        except Exception:
+            circuit.record_failure()
+            raise
+        circuit.record_success()
+        return result
+
+    def _complete_inner(self, request: AICompletionRequest) -> AIResponse:
         model = request.model or self._settings.openai_model
         max_retries = self._settings.openai_max_retries
         timeout = request.timeout_seconds or self._settings.openai_timeout

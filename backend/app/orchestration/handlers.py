@@ -48,7 +48,7 @@ def build_manager_executor(session: Session, settings: Settings) -> RegistryExec
     """Register full-cycle executors for Manager orchestration (thin adapters only)."""
     registry = RegistryExecutor()
     search = build_search_service(settings)
-    browser = build_browser_service(settings)
+    browser = build_browser_service(settings, session=session)
     ai = build_ai_service(settings)
     approvals = ApprovalService(session, settings)
 
@@ -427,7 +427,7 @@ def build_default_handlers(session: Session, settings: Settings) -> dict[str, Wo
         agent = ResearchAgent(
             session=session,
             search_service=build_search_service(settings),
-            browser_service=build_browser_service(settings),
+            browser_service=build_browser_service(settings, session=session),
             settings=settings,
         )
         query = str(payload.get("query") or "local businesses website")
@@ -453,7 +453,7 @@ def build_default_handlers(session: Session, settings: Settings) -> dict[str, Wo
         agent = AuditAgent(
             session=session,
             search_service=build_search_service(settings),
-            browser_service=build_browser_service(settings),
+            browser_service=build_browser_service(settings, session=session),
             ai_service=build_ai_service(settings),
             settings=settings,
         )

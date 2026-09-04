@@ -31,6 +31,7 @@ from app.providers.email.exceptions import (
 from app.providers.email.recipient import normalize_and_validate_recipient, normalize_from_address
 from app.providers.email.resend_provider import ResendEmailProvider
 from app.providers.email.types import EmailAddress, EmailSendRequest, EmailSendResponse
+from app.services.outreach_body import compose_outreach_body
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,41 @@ class EmailService:
         metadata: dict[str, Any] | None = None,
     ) -> OutboundMessage:
         """Send one email after approval, rate limits, and idempotency checks."""
-        # 1) Approval gate — never bypass
-        gate = self._approvals.evaluate_gate(action_type, approval_id=approval_id)
+        from app.approvals.fingerprint import build_outbound_email_payload, compute_fingerprint
+        from app.exceptions import ApprovalPayloadMismatchError
+        from app.owner.controls import SystemControlService
+
+        # Owner system controls — approved email still cannot send when outbound is off
+        SystemControlService(self._session).assert_outbound(actor="email_service")
+
+        # Validate recipient before approval rebind — bad addresses must not cancel approvals
+        recipient = normalize_and_validate_recipient(to_email, name=to_name)
+
+        live_payload = build_outbound_email_payload(
+            action_type=action_type,
+            recipient_email=to_email,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            outreach_id=outreach_id,
+            lead_id=lead_id,
+            company_id=company_id,
+            sender_from=(self._settings.email_from or "").strip(),
+        )
+        gate = self._approvals.evaluate_gate(
+            action_type,
+            approval_id=approval_id,
+            action_payload=live_payload,
+        )
         if not gate.may_execute:
+            if gate.reason == "APPROVAL_PAYLOAD_MISMATCH":
+                raise ApprovalPayloadMismatchError(
+                    details={
+                        "approval_id": str(approval_id),
+                        "action_type": action_type,
+                        "decision": gate.decision,
+                    },
+                )
             raise ForbiddenError(
                 "Outbound email blocked by approval gate",
                 details={
@@ -103,9 +136,25 @@ class EmailService:
                 "Outbound email requires an APPROVED approval",
                 details={"status": approval.status.value},
             )
+        # Defense in depth: compare fingerprint again after gate
+        from app.models import Approval as ApprovalModel
 
-        # 2) Recipient + from validation
-        recipient = normalize_and_validate_recipient(to_email, name=to_name)
+        approval_row = self._session.get(ApprovalModel, approval_id)
+        if approval_row is not None:
+            live_fp = compute_fingerprint(
+                action_type=action_type,
+                action_payload=live_payload,
+                manager_task_id=approval_row.manager_task_id,
+            )
+            if live_fp != approval_row.fingerprint:
+                raise ApprovalPayloadMismatchError(
+                    details={"approval_id": str(approval_id), "action_type": action_type},
+                )
+
+        if not self.is_configured():
+            raise EmailConfigurationError(
+                "Email provider or EMAIL_FROM is not configured",
+            )
         from_email = normalize_from_address(self._settings.email_from or "")
 
         # 3) Idempotency — same key must never send twice
@@ -155,13 +204,12 @@ class EmailService:
         # 5) Follow-up cap per lead
         if lead_id is not None:
             prior = self._count_sent_for_lead(lead_id)
-            # First message: prior==0. Follow-ups: prior >= 1, allow up to max_followups follow-ups
             if prior == 0:
                 is_followup = False
                 followup_index = 0
             else:
                 is_followup = True
-                followup_index = prior  # 1st follow-up when prior==1
+                followup_index = prior
                 try:
                     limit_svc.assert_followups_for_lead(lead_id)
                 except LimitReachedError as exc:
@@ -177,11 +225,6 @@ class EmailService:
                     )
         else:
             followup_index = 1 if is_followup else 0
-
-        if not self.is_configured():
-            raise EmailConfigurationError(
-                "Email provider or EMAIL_FROM is not configured",
-            )
 
         message = OutboundMessage(
             outreach_id=outreach_id,
@@ -200,6 +243,7 @@ class EmailService:
             is_followup=is_followup,
             followup_index=followup_index,
             max_attempts=self._settings.resend_max_retries + 1,
+            estimated_cost=self._settings.resend_cost_per_email,
             extra_metadata=dict(metadata or {}),
         )
         self._session.add(message)
@@ -241,9 +285,7 @@ class EmailService:
                 details={"outreach_id": str(outreach_id), "status": str(outreach.status)},
             )
 
-        body = outreach.message
-        if outreach.cta and outreach.cta not in body:
-            body = f"{body}\n\n{outreach.cta}"
+        body = compose_outreach_body(outreach)
 
         return self.send(
             to_email=outreach.recipient_email,

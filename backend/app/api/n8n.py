@@ -26,8 +26,11 @@ def _settings(request: Request) -> Settings:
     return getattr(request.app.state, "settings", None) or get_settings()
 
 
-def require_n8n_auth(request: Request) -> None:
-    verify_n8n_webhook(request, _settings(request))
+async def require_n8n_auth(
+    request: Request,
+    session: Annotated[Session, Depends(get_db)],
+) -> None:
+    await verify_n8n_webhook(request, _settings(request), session=session)
 
 
 def get_orchestration_service(

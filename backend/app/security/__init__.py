@@ -174,10 +174,37 @@ def assert_production_settings(settings: Settings) -> None:
     if not settings.n8n_webhook_configured:
         logger.warning("N8N_WEBHOOK_SECRET unset in production — n8n webhooks fail closed")
     if not settings.owner_api_key_configured:
-        logger.warning("OWNER_API_KEY unset in production — owner HTTP actions fail closed")
+        logger.warning("OWNER_API_KEY unset in production — API-key owner actions fail closed")
+    has_bootstrap = bool(
+        (settings.owner_bootstrap_email or "").strip()
+        and settings.owner_bootstrap_password
+        and settings.owner_bootstrap_password.get_secret_value().strip()
+    )
+    if not settings.owner_api_key_configured and not has_bootstrap:
+        raise ValidationAppError(
+            "Production requires OWNER_API_KEY or OWNER_BOOTSTRAP_EMAIL+PASSWORD for owner auth",
+            details={"code": "CONFIGURATION_ERROR"},
+        )
+    if not settings.session_cookie_secure:
+        logger.warning("SESSION_COOKIE_SECURE is false in production — set true behind HTTPS")
     if settings.browser_javascript_enabled:
         logger.warning(
             "BROWSER_JAVASCRIPT_ENABLED=true in production — SSRF surface is larger"
         )
     if settings.is_pilot_mode:
         logger.info("APP_ENV=production but OPERATING_MODE=pilot — Pilot Mode caps remain active")
+
+
+# Re-export pilot deployment validator for callers that import from app.security
+from app.security.pilot_config_validator import validate_pilot_deployment  # noqa: E402
+
+__all__ = [
+    "assert_daily_budget",
+    "assert_max_single_expense",
+    "assert_production_settings",
+    "constant_time_equals",
+    "daily_cost_total",
+    "require_owner_identity",
+    "validate_pilot_deployment",
+    "validate_webhook_timestamp",
+]

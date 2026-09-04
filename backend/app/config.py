@@ -100,8 +100,12 @@ class Settings(BaseSettings):
         description="MAX_FOLLOWUPS_PER_LEAD after the first send (pilot default 2).",
     )
     budget_warning_ratio: Decimal = Field(
-        default=Decimal("0.80"),
-        description="Notify owner when daily spend reaches this fraction of the budget.",
+        default=Decimal("0.70"),
+        description="OwnerAlert INFO/IMPORTANT when daily spend reaches this fraction.",
+    )
+    budget_urgent_ratio: Decimal = Field(
+        default=Decimal("0.90"),
+        description="OwnerAlert URGENT when daily spend reaches this fraction.",
     )
     pilot_currency: str = Field(
         default="EUR",
@@ -361,6 +365,13 @@ class Settings(BaseSettings):
         default=True,
         description="When true, n8n webhooks must send X-N8N-Timestamp (Unix epoch seconds).",
     )
+    n8n_webhook_require_signature: bool = Field(
+        default=True,
+        description=(
+            "When true, n8n webhooks must send X-N8N-Signature (HMAC-SHA256) "
+            "and X-N8N-Nonce for replay protection."
+        ),
+    )
     n8n_default_timeout_seconds: float = Field(
         default=120.0,
         ge=5.0,
@@ -392,8 +403,19 @@ class Settings(BaseSettings):
         description="HTTP rate limit for /health per client IP.",
     )
 
-    # Owner HTTP actions (future dashboard/approval APIs) — fail closed when unset
+    # Owner HTTP actions — API key is emergency/local only; prefer session auth
     owner_api_key: SecretStr | None = None
+    owner_bootstrap_email: str = Field(
+        default="",
+        description="When set with OWNER_BOOTSTRAP_PASSWORD, creates first owner if none exist.",
+    )
+    owner_bootstrap_password: SecretStr | None = None
+    owner_session_ttl_hours: int = Field(default=12, ge=1, le=168)
+    owner_login_rate_limit_per_minute: int = Field(default=10, ge=1, le=100)
+    session_cookie_secure: bool = Field(
+        default=False,
+        description="Set true in production so session cookie requires HTTPS.",
+    )
 
     @property
     def openai_configured(self) -> bool:

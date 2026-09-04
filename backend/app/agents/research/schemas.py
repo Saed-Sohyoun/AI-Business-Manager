@@ -67,10 +67,12 @@ class StoredCompanySummary(BaseModel):
 
 
 class ResearchRunResult(BaseModel):
+    """Canonical research output (contract name: ResearchResult)."""
+
     model_config = ConfigDict(extra="forbid")
 
     agent_run_id: UUID
-    status: Literal["succeeded", "failed", "partial"]
+    status: Literal["succeeded", "failed", "partial", "escalated"]
     query: str
     companies_created: int = 0
     companies_duplicate: int = 0
@@ -81,3 +83,8 @@ class ResearchRunResult(BaseModel):
     idempotent_replay: bool = False
     error_message: str | None = None
     logs: list[str] = Field(default_factory=list)
+    escalation: dict | None = None
+
+
+# Contract output alias — machine-readable name from AgentContract.output_schema
+ResearchResult = ResearchRunResult

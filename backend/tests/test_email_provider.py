@@ -108,12 +108,25 @@ def email_env(db_session):
 
 
 def _approve_send(env, outreach: Outreach):
+    from app.approvals.fingerprint import build_outbound_email_payload
+    from app.services.outreach_body import compose_outreach_body
+
+    payload = build_outbound_email_payload(
+        action_type="sales.send_outreach",
+        recipient_email=outreach.recipient_email or "",
+        subject=outreach.subject,
+        body_text=compose_outreach_body(outreach),
+        outreach_id=outreach.id,
+        lead_id=outreach.lead_id,
+        company_id=outreach.company_id,
+        sender_from=env["settings"].email_from or "",
+    )
     view = env["approvals"].request_approval(
         ApprovalRequest(
             action_type="sales.send_outreach",
             description="Send outreach",
             requested_by="manager",
-            action_payload={"outreach_id": str(outreach.id)},
+            action_payload=payload,
         )
     )
     env["session"].commit()
@@ -288,7 +301,7 @@ def test_approval_requirement(email_env):
 
 def test_rate_limit_daily(email_env):
     cfg = email_env["settings"].model_copy(update={"max_outbound_messages_per_day": 1})
-    approval_id = _approve_send(email_env, email_env["outreach"])
+    _approve_send(email_env, email_env["outreach"])
     provider = _mock_provider_ok()
     service = EmailService(
         provider,
@@ -298,20 +311,48 @@ def test_rate_limit_daily(email_env):
     )
     service.send_outreach(email_env["outreach"].id)
 
+    # Second distinct outbound needs its own approval fingerprint
+    from app.approvals.fingerprint import build_outbound_email_payload
+    from uuid import uuid4 as _uuid4
+
+    other_lead = _uuid4()
+    payload = build_outbound_email_payload(
+        action_type="sales.send_outreach",
+        recipient_email="other@acme.example",
+        subject="Another",
+        body_text="Body",
+        lead_id=other_lead,
+        sender_from=cfg.email_from or "",
+    )
+    view = email_env["approvals"].request_approval(
+        ApprovalRequest(
+            action_type="sales.send_outreach",
+            description="Second send",
+            requested_by="manager",
+            action_payload=payload,
+        )
+    )
+    email_env["session"].commit()
+    email_env["resolver"].approve(
+        ResolveApprovalRequest(approval_id=view.id, resolved_by="owner", note="ok")
+    )
+    email_env["session"].commit()
+
     with pytest.raises(EmailRateLimitError):
         service.send(
             to_email="other@acme.example",
             subject="Another",
             body_text="Body",
             idempotency_key="other-1",
-            approval_id=approval_id,
-            lead_id=uuid4(),
+            approval_id=view.id,
+            lead_id=other_lead,
         )
 
 
 def test_followup_limit(email_env):
     cfg = email_env["settings"].model_copy(update={"max_followups": 1})
-    approval_id = _approve_send(email_env, email_env["outreach"])
+    from app.approvals.fingerprint import build_outbound_email_payload
+
     provider = _mock_provider_ok()
     service = EmailService(
         provider,
@@ -319,29 +360,55 @@ def test_followup_limit(email_env):
         settings=cfg,
         approval_service=email_env["approvals"],
     )
+
+    def _approve_exact(*, subject: str, body: str, to: str):
+        payload = build_outbound_email_payload(
+            action_type="sales.send_outreach",
+            recipient_email=to,
+            subject=subject,
+            body_text=body,
+            lead_id=email_env["lead"].id,
+            sender_from=cfg.email_from or "",
+        )
+        view = email_env["approvals"].request_approval(
+            ApprovalRequest(
+                action_type="sales.send_outreach",
+                description=subject,
+                requested_by="manager",
+                action_payload=payload,
+            )
+        )
+        email_env["session"].commit()
+        email_env["resolver"].approve(
+            ResolveApprovalRequest(approval_id=view.id, resolved_by="owner", note="ok")
+        )
+        email_env["session"].commit()
+        return view.id
+
+    to = "alex@acme.example"
     service.send(
-        to_email="alex@acme.example",
+        to_email=to,
         subject="First",
         body_text="Body",
         idempotency_key="fu-1",
-        approval_id=approval_id,
+        approval_id=_approve_exact(subject="First", body="Body", to=to),
         lead_id=email_env["lead"].id,
     )
     service.send(
-        to_email="alex@acme.example",
+        to_email=to,
         subject="Follow 1",
         body_text="Body",
         idempotency_key="fu-2",
-        approval_id=approval_id,
+        approval_id=_approve_exact(subject="Follow 1", body="Body", to=to),
         lead_id=email_env["lead"].id,
     )
     with pytest.raises(EmailRateLimitError):
         service.send(
-            to_email="alex@acme.example",
+            to_email=to,
             subject="Follow 2",
             body_text="Body",
             idempotency_key="fu-3",
-            approval_id=approval_id,
+            approval_id=_approve_exact(subject="Follow 2", body="Body", to=to),
             lead_id=email_env["lead"].id,
         )
 

@@ -38,6 +38,7 @@ class BudgetStatus(BaseModel):
     remaining: Decimal
     currency: str
     warning: bool
+    urgent: bool = False
     exhausted: bool
     ratio: Decimal
 

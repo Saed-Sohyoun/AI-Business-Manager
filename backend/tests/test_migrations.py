@@ -31,7 +31,11 @@ def test_alembic_config_loads():
     assert "0012_business_reports" in revisions
     assert "0013_notifications" in revisions
     assert "0014_workflow_executions" in revisions
-    assert script.get_current_head() == "0014_workflow_executions"
+    assert "0015_security_events_webhooks" in revisions
+    assert "0016_owner_control_plane" in revisions
+    assert "0017_wave4_production_readiness" in revisions
+    assert "0018_wave5_pilot_experiment" in revisions
+    assert script.get_current_head() == "0018_wave5_pilot_experiment"
 
 
 def test_initial_migration_module_exports_upgrade_downgrade():
